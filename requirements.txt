@@ -1,0 +1,12 @@
+opencv-python>=4.5.0
+numpy>=1.21.0
+Pillow>=10.1.0
+colornamer==0.2.3
+scikit_learn>=1.4.0
+webcolors
+ultralytics>=8.3.0
+scipy
+demucs
+librosa
+pedalboard
+llama_cpp @ https://modelscope.cn/models/disambo/Tools/resolve/master/whl/llama_cpp_python-0.3.33%2Bcu130.basic-cp311-cp311-win_amd64.whl
