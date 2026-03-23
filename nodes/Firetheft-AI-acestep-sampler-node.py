@@ -1,4 +1,4 @@
-# JKASS Sampler for ComfyUI
+# ACE-Step Sampler for ComfyUI
 # Dual implementation: quality and speed variants for ACE-Step audio generation
 
 import torch
@@ -56,7 +56,7 @@ def _apply_simple_spectral_smoothing(tensor, strength: float):
 
 
 @torch.no_grad()
-def sample_jkass_quality(
+def sample_acestep_quality(
     model,
     x,
     sigmas,
@@ -73,7 +73,7 @@ def sample_jkass_quality(
     **kwargs
 ):
     """
-    JKASS Quality sampler optimized for maximum audio quality in ACE-Step.
+    ACE-Step Quality sampler optimized for maximum audio quality in ACE-Step.
     
     Quality enhancements:
     - Second-order Heun method for improved accuracy
@@ -148,7 +148,7 @@ def sample_jkass_quality(
 
 
 @torch.no_grad()
-def sample_jkass_fast(
+def sample_acestep_fast(
     model,
     x,
     sigmas,
@@ -165,7 +165,7 @@ def sample_jkass_fast(
     anti_autotune_strength=0.0,
     **kwargs
 ):
-    """JKASS Fast sampler optimized for speed while providing smoothing options.
+    """ACE-Step Fast sampler optimized for speed while providing smoothing options.
     """
     extra_args = extra_args or {}
     if len(sigmas) <= 1:
@@ -226,7 +226,7 @@ def sample_jkass_fast(
 
 # Alias for backward compatibility
 @torch.no_grad()
-def sample_jkass(
+def sample_acestep(
     model,
     x,
     sigmas,
@@ -235,14 +235,14 @@ def sample_jkass(
     disable=None,
     **kwargs
 ):
-    """Backward compatibility alias (use jkass_quality or jkass_fast)"""
-    return sample_jkass_quality(model, x, sigmas, extra_args, callback, disable, **kwargs)
+    """Backward compatibility alias (use acestep_quality or acestep_fast)"""
+    return sample_acestep_quality(model, x, sigmas, extra_args, callback, disable, **kwargs)
 
 
 extra_samplers = {
-    'jkass_quality': sample_jkass_quality,
-    'jkass_fast': sample_jkass_fast,
-    'jkass': sample_jkass,
+    'acestep_quality': sample_acestep_quality,
+    'acestep_fast': sample_acestep_fast,
+    'acestep': sample_acestep,
 }
 
 def add_samplers():
@@ -255,7 +255,7 @@ def add_samplers():
                 setattr(k_diffusion_sampling, "sample_{}".format(sampler), extra_samplers[sampler])
                 added += 1
             except Exception as e:
-                print(f"[JKASS Sampler error] Failed to add sampler {sampler}: {e}")
+                print(f"[ACE-Step Sampler error] Failed to add sampler {sampler}: {e}")
 
     if added > 0:
         import importlib
@@ -263,7 +263,7 @@ def add_samplers():
             importlib.reload(k_diffusion_sampling)
         except Exception:
             pass
-        print("[INFO] JKASS samplers added successfully!")
+        print("[INFO] ACE-Step samplers added successfully!")
 
 add_samplers()
 

@@ -13,7 +13,7 @@ node_list = [
     "Firetheft-AI-face_detection_node",
     "Firetheft-AI-latent-pixel-scale-node",
     "Firetheft-AI-image-compare-node",
-    "Firetheft-AI-jkass-sampler-node",
+    "Firetheft-AI-acestep-sampler-node",
     "Firetheft-AI-audio-enhancer-node",
 ]
 
