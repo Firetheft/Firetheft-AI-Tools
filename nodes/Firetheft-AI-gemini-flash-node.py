@@ -2,12 +2,18 @@ import os
 import json
 import base64
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import time
 from io import BytesIO
 from PIL import Image
 import torch
 import torchaudio
 import numpy as np
+import urllib3
+
+# 禁用 InsecureRequestWarning 警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 获取当前文件所在目录
 p = os.path.dirname(os.path.realpath(__file__))
@@ -73,21 +79,59 @@ class GeminiFlash:
 
         self.proxy_url = config.get("PROXY")
         self.chat_history = ChatHistory()
+        self.session = requests.Session()
+        
+        # 禁用系统环境变量代理（如 HTTPS_PROXY），避免干扰 TUN/VPN 模式
+        self.session.trust_env = False
+        
+        # 设置浏览器 User-Agent，减少被识别为脚本的概率
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept": "*/*",
+            "Connection": "keep-alive"
+        })
+
+        # 配置重试机制
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # 严格区分 代理服务器 (Proxy) 和 镜像站 (Mirror)
+        if self.proxy_url and self.proxy_url.strip():
+            p_url = self.proxy_url.strip()
+            # 只有明确以协议开头的（http/socks）才作为代理服务器引入
+            if p_url.startswith(("http://", "https://", "socks")):
+                self.session.proxies = {
+                    "http": p_url,
+                    "https": p_url
+                }
+                print(f"[GeminiFlash] 已配置代理服务器: {p_url}")
+            else:
+                print(f"[GeminiFlash] 识别为镜像站模式 (不注入 proxies): {p_url}")
 
     def _get_api_url(self, model_version):
         """构造 API URL，支持自定义代理"""
         base_url = "https://generativelanguage.googleapis.com"
         
         if self.proxy_url and self.proxy_url.strip():
-            base_url = self.proxy_url.strip()
-            if base_url.endswith('/'):
-                base_url = base_url[:-1]
-            if not base_url.startswith('http'):
-                base_url = f"https://{base_url}"
-            print(f"[GeminiFlash] 使用自定义代理: {base_url}")
+            # 镜像站模式：不带 http:// 或以域名/IP 直接定义的地址
+            if not self.proxy_url.startswith(("http://", "https://", "socks")):
+                base_url = self.proxy_url.strip()
+                if base_url.endswith('/'):
+                    base_url = base_url[:-1]
+                if not base_url.startswith('http'):
+                    base_url = f"https://{base_url}"
+                print(f"[GeminiFlash] 使用镜像站地址: {base_url}")
         
-        # 默认使用 v1beta 版本
-        return f"{base_url}/v1beta/models/{model_version}:generateContent?key={self.api_key}"
+        # 强制清除所有潜在空格
+        model_name = model_version.strip().replace(" ", "")
+        api_key_clean = self.api_key.strip().replace(" ", "")
+        
+        # 最终构造 URL
+        final_url = f"{base_url}/v1beta/models/{model_name}:generateContent?key={api_key_clean}"
+        return final_url
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -153,7 +197,11 @@ class GeminiFlash:
                     "音频指令-音频描述"
                 ], {"default": "不使用预设"}),
                 "input_type": (["text", "image", "video", "audio"], {"default": "text"}),
-                "model_version": (["no-api", "gemini-2.5-flash", "gemini-2.5-flash-image", "gemini-3-flash-preview", "gemini-3-pro-image-preview"], {"default": "gemini-2.5-flash"}),
+                "model_version": ([
+                    "no-api", 
+                    "gemini-3-flash-preview",
+                    "gemini-2.5-flash"
+                ], {"default": "gemini-3-flash-preview"}),
                 "operation_mode": (["analysis", "generate_images"], {"default": "analysis"}),
                 "chat_mode": ("BOOLEAN", {"default": False}),
                 "clear_history": ("BOOLEAN", {"default": False})
@@ -264,7 +312,7 @@ class GeminiFlash:
             frames = self.sample_video_frames(video)
             if frames:
                 # 更新文本提示
-                parts[0]["text"] = f"Analyzing video frames. {text_content}"
+                parts[0]["text"] = f"Analyzing video frames. {prompt}"
                 for frame in frames:
                     img_byte_arr = BytesIO()
                     frame.save(img_byte_arr, format='PNG')
@@ -338,7 +386,7 @@ class GeminiFlash:
             # 发送请求，verify=False 忽略 SSL 错误
             safe_url = url.split("?")[0] if "?" in url else "Gemini API"
             print(f"[Gemini] Sending image generation request to {safe_url}")
-            response = requests.post(url, headers=headers, json=payload, verify=False, timeout=120)
+            response = self.session.post(url, headers=headers, json=payload, verify=False, timeout=120)
             
             if response.status_code != 200:
                 return f"Error: {response.status_code} - {response.text}", self.create_placeholder_image()
@@ -800,10 +848,12 @@ Rules for Generation:
                     "parts": [{"text": system_text}]
                 }
 
-            # === 关键点：verify=False 忽略 SSL 证书验证，解决 Connection Error ===
+            # === 关键点：使用 Session + Browser Header + Retries ===
             safe_url = url.split("?")[0] if "?" in url else "Gemini API"
-            print(f"[Gemini] Sending request to {safe_url}")
-            response = requests.post(url, headers=headers, json=payload, verify=False, timeout=120)
+            payload_size = len(json.dumps(payload))
+            print(f"[Gemini] Sending request to {safe_url} (Payload Size: {payload_size} bytes)")
+            
+            response = self.session.post(url, headers=headers, json=payload, verify=False, timeout=120)
             
             if response.status_code != 200:
                 error_msg = f"API Error {response.status_code}: {response.text}"
