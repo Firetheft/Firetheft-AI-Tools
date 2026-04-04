@@ -11,10 +11,11 @@ node_list = [
     "Firetheft-AI-text-viewer-node",
     "Firetheft-AI-text-encode-nodes",
     "Firetheft-AI-face_detection_node",
-    "Firetheft-AI-latent-pixel-scale-node",
     "Firetheft-AI-image-compare-node",
     "Firetheft-AI-acestep-sampler-node",
     "Firetheft-AI-audio-enhancer-node",
+    "Firetheft-AI-image-pixel-scale-node",
+    "Firetheft-AI-latent-pixel-scale-node",
 ]
 
 NODE_CLASS_MAPPINGS = {}

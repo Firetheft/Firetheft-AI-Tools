@@ -132,19 +132,19 @@ def latent_upscale_on_pixel_space_with_model2(samples, scale_method, upscale_mod
     return vae_encode(vae, pixels, use_tile, hook, tile_size=tile_size, overlap=overlap), old_pixels
 
 class LatentPixelScaleNode:
-    upscale_methods = ["nearest-exact", "bilinear", "lanczos", "area"]
+    upscale_methods = ["lanczos", "bicubic", "bilinear", "nearest-exact", "area"]
 
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
                      "samples": ("LATENT", ),
-                     "scale_method": (s.upscale_methods,),
-                     "scale_factor": ("FLOAT", {"default": 1.5, "min": 0.1, "max": 10000, "step": 0.05}),
+                     "scale_method": (s.upscale_methods, {"default": "bicubic", "tooltip": "缩放算法：注重画质建议使用 lanczos 或 bicubic，避免 nearest-exact 的锯齿感。"}),
+                     "scale_factor": ("FLOAT", {"default": 2, "min": 0.1, "max": 10000, "step": 0.05, "tooltip": "目标缩放倍数（例如 2 代表放大 2 倍）。"}),
                      "vae": ("VAE", ),
-                     "use_tiled_vae": ("BOOLEAN", {"default": False, "label_on": "enabled", "label_off": "disabled"}),
+                     "use_tiled_vae": ("BOOLEAN", {"default": False, "label_on": "enabled", "label_off": "disabled", "tooltip": "使用分块 VAE 编码/解码，以处理大尺寸图像。"}),
                     },
                 "optional": {
-                        "upscale_model_opt": ("UPSCALE_MODEL", ),
+                        "upscale_model_opt": ("UPSCALE_MODEL", {"tooltip": "（可选）外接放大模型。如果连接，将先使用模型放大，再精确调整到目标尺寸。"}),
                     }
                 }
 
