@@ -95,7 +95,9 @@ class TextEncodeFlux2KleinImageEdit_Enhanced:
             "y": 0,
             "width": 0,
             "height": 0,
-            "scale_by": 0
+            "scale_by": 0,
+            "original_width": 0,
+            "original_height": 0
         }
         ref_latents = []
         ref_masks = []
@@ -192,7 +194,9 @@ class TextEncodeFlux2KleinImageEdit_Enhanced:
                                 "y": 0,
                                 "width": canvas_width - resized_width,
                                 "height": canvas_height - resized_height,
-                                "scale_by": round(1 / actual_scale_by, 5) if actual_scale_by != 0 else 1.0
+                                "scale_by": round(1 / actual_scale_by, 5) if actual_scale_by != 0 else 1.0,
+                                "original_width": samples.shape[3],
+                                "original_height": samples.shape[2]
                             }
 
                         s = canvas
@@ -371,7 +375,9 @@ class TextEncodeQwenImageEdit_Enhanced:
             "y": 0,
             "width": 0,
             "height": 0,
-            "scale_by": 0
+            "scale_by": 0,
+            "original_width": 0,
+            "original_height": 0
         }
         ref_latents = []
         ref_masks = []
@@ -476,7 +482,9 @@ class TextEncodeQwenImageEdit_Enhanced:
                                 "y": 0,
                                 "width": canvas_width - resized_width,
                                 "height": canvas_height - resized_height,
-                                "scale_by": round(1 / actual_scale_by, 5) if actual_scale_by != 0 else 1.0
+                                "scale_by": round(1 / actual_scale_by, 5) if actual_scale_by != 0 else 1.0,
+                                "original_width": samples.shape[3],
+                                "original_height": samples.shape[2]
                             }
 
                         s = canvas
@@ -640,10 +648,17 @@ class CropWithPadInfo_Enhanced:
             if scale_by == 0.0 or latent_upscale_factor == 0.0:
                 final_tensor = cropped_img
             else:
-                final_scale_factor = scale_by / latent_upscale_factor
                 _b, _c, current_h, current_w = cropped_img.shape
-                target_w = int(round(current_w * final_scale_factor))
-                target_h = int(round(current_h * final_scale_factor))
+                original_width = pad_info.get("original_width", None)
+                original_height = pad_info.get("original_height", None)
+
+                if original_width is not None and original_height is not None:
+                    target_w = original_width
+                    target_h = original_height
+                else:
+                    final_scale_factor = scale_by / latent_upscale_factor
+                    target_w = int(round(current_w * final_scale_factor))
+                    target_h = int(round(current_h * final_scale_factor))
 
                 if target_w < 1 or target_h < 1:
                      target_w = max(1, target_w)
