@@ -9,9 +9,9 @@ import uuid
 import comfy.model_management
 
 def image_upscale_on_pixel_space(image, scale_method, scale_factor):
-    w = image.shape[2] * scale_factor
-    h = image.shape[1] * scale_factor
-    image = nodes.ImageScale().upscale(image, scale_method, int(w), int(h), False)[0]
+    w = max(2, int(round((image.shape[2] * scale_factor) / 2.0)) * 2)
+    h = max(2, int(round((image.shape[1] * scale_factor) / 2.0)) * 2)
+    image = nodes.ImageScale().upscale(image, scale_method, w, h, False)[0]
     return image
 
 def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upscale_model, scale_factor, max_megapixels, chunk_frames, cache_backend):
@@ -19,8 +19,8 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
     w = image.shape[2]
     h = image.shape[1]
 
-    new_w = int(w * scale_factor)
-    new_h = int(h * scale_factor)
+    new_w = max(2, int(round((w * scale_factor) / 2.0)) * 2)
+    new_h = max(2, int(round((h * scale_factor) / 2.0)) * 2)
     
     # Human-readable MP to raw pixels
     max_pixels = int(max_megapixels * 1024 * 1024)
@@ -126,14 +126,16 @@ class ImagePixelScaleNode:
     def INPUT_TYPES(s):
         return {"required": {
                      "image": ("IMAGE", ),
-                     "scale_method": (s.upscale_methods, {"default": "bicubic", "tooltip": "缩放算法：注重画质建议使用 lanczos 或 bicubic，避免 nearest-exact 的锯齿感。"}),
-                     "scale_factor": ("FLOAT", {"default": 2, "min": 0.1, "max": 10000, "step": 0.05, "tooltip": "目标缩放倍数（例如 2 代表放大 2 倍）。"}),
-                     "max_megapixels": ("FLOAT", {"default": 32, "min": 0.01, "max": 1024.0, "step": 0.01, "tooltip": "最大像素预算 (MP)。系统根据此值自动计算批次。8G 显存建议 16-32，数值越大速度越快但越占显存。"}),
-                     "chunk_frames": ("INT", {"default": 128, "min": 1, "max": 65535, "step": 1, "tooltip": "外层分块处理帧数。控制进度更新频率和磁盘缓存的单元大小。"}),
-                     "cache_backend": (["memory", "disk"], {"default": "disk", "tooltip": "缓存模式：memory（放内存，快）或 disk（暂存硬盘，防显存/内存溢出）。"}),
+                     "scale_mode": (["multiple", "resolution"], {"default": "multiple", "tooltip": "Scale mode: by multiple, or by fixed resolution long side automatically adapts."}),
+                     "scale_factor": ("FLOAT", {"default": 2, "min": 0.1, "max": 10000, "step": 0.05, "tooltip": "Target scale factor (e.g., 2 represents 2 times magnification)."}),
+                     "resolution": (["720p (1280)", "1080p (1920)", "2k (2560)", "3k (3072)", "4k (3840)", "8k (7680)"], {"default": "2k (2560)", "tooltip": "Target fixed resolution (based on the long side in pixels, maintaining the original image ratio)."}),
+                     "scale_method": (s.upscale_methods, {"default": "bicubic", "tooltip": "Scaling algorithm: for better image quality, it is recommended to use lanczos or bicubic to avoid the jaggedness of nearest-exact."}),
+                     "max_megapixels": ("FLOAT", {"default": 32, "min": 0.01, "max": 1024.0, "step": 0.01, "tooltip": "Maximum pixel budget (MP). The system automatically calculates the batch based on this value. 8G VRAM is recommended for 16-32, and the larger the value, the faster the speed but the more VRAM it occupies."}),
+                     "chunk_frames": ("INT", {"default": 128, "min": 1, "max": 65535, "step": 1, "tooltip": "Outer chunk processing frame count. Controls the frequency of progress updates and the size of disk cache units."}),
+                     "cache_backend": (["memory", "disk"], {"default": "disk", "tooltip": "Cache mode: memory (fast, uses RAM) or disk (slower, uses disk, prevents OOM)."}),
                     },
                 "optional": {
-                        "upscale_model_opt": ("UPSCALE_MODEL", {"tooltip": "（可选）外接放大模型。如果连接，将先使用模型放大，再精确调整到目标尺寸。"}),
+                        "upscale_model_opt": ("UPSCALE_MODEL", {"tooltip": "(Optional) External upscale model. If connected, it will be used for the initial upscale before precise dimension adjustment."}),
                     }
                 }
 
@@ -142,12 +144,22 @@ class ImagePixelScaleNode:
 
     CATEGORY = "📜Firetheft AI Tools"
 
-    def doit(self, image, scale_method, scale_factor, max_megapixels, chunk_frames, cache_backend, upscale_model_opt=None):
+    def doit(self, image, scale_mode, scale_factor, resolution, scale_method, max_megapixels, chunk_frames, cache_backend, upscale_model_opt=None):
+        if scale_mode == "resolution":
+            try:
+                target_longest_side = int(resolution.split("(")[1].replace(")", ""))
+                longest_side = max(image.shape[2], image.shape[1])
+                actual_scale_factor = target_longest_side / longest_side
+            except Exception:
+                actual_scale_factor = scale_factor
+        else:
+            actual_scale_factor = scale_factor
+
         if upscale_model_opt is None:
-            image = image_upscale_on_pixel_space(image, scale_method, scale_factor)
+            image = image_upscale_on_pixel_space(image, scale_method, actual_scale_factor)
         else:
             image = image_upscale_on_pixel_space_with_model_optimized(
-                image, scale_method, upscale_model_opt, scale_factor, 
+                image, scale_method, upscale_model_opt, actual_scale_factor, 
                 max_megapixels, chunk_frames, cache_backend
             )
         return (image,)
