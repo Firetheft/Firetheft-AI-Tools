@@ -7,9 +7,9 @@ app.registerExtension({
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
-                
+
                 const node = this;
-                
+
                 // Allow widgets to initialize
                 setTimeout(() => {
                     const scaleModeWidget = node.widgets.find(w => w.name === "scale_mode");
@@ -21,13 +21,13 @@ app.registerExtension({
                     // Save original properties
                     scaleFactorWidget.origType = scaleFactorWidget.type;
                     scaleFactorWidget.origComputeSize = scaleFactorWidget.computeSize;
-                    
+
                     resolutionWidget.origType = resolutionWidget.type;
                     resolutionWidget.origComputeSize = resolutionWidget.computeSize;
 
                     node.updateVisibility = () => {
                         const mode = scaleModeWidget.value;
-                        if (mode === "按倍数缩放" || mode === "By Scale Factor") {
+                        if (mode === "multiple" || mode === "By Scale Factor") {
                             scaleFactorWidget.type = scaleFactorWidget.origType;
                             scaleFactorWidget.computeSize = scaleFactorWidget.origComputeSize;
                             resolutionWidget.type = "hidden";
@@ -38,7 +38,7 @@ app.registerExtension({
                             scaleFactorWidget.type = "hidden";
                             scaleFactorWidget.computeSize = () => [0, -4];
                         }
-                        
+
                         setTimeout(() => {
                             if (node.computeSize) {
                                 node.setSize(node.computeSize());
@@ -50,7 +50,7 @@ app.registerExtension({
                     node.updateVisibility();
 
                     const origCallback = scaleModeWidget.callback;
-                    scaleModeWidget.callback = function(value, cbApp) {
+                    scaleModeWidget.callback = function (value, cbApp) {
                         node.updateVisibility();
                         if (origCallback) {
                             return origCallback.apply(this, arguments);
@@ -60,7 +60,7 @@ app.registerExtension({
             };
 
             const onConfigure = nodeType.prototype.onConfigure;
-            nodeType.prototype.onConfigure = function(info) {
+            nodeType.prototype.onConfigure = function (info) {
                 onConfigure?.apply(this, arguments);
                 if (this.updateVisibility) {
                     this.updateVisibility();
