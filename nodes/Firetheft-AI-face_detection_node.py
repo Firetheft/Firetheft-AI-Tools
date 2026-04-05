@@ -73,7 +73,7 @@ class FaceDetectionNode:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "yolo_model": (YOLO_FACE_MODELS, {"default": "yolov12m-face.pt"}),
+                "yolo_model": (YOLO_FACE_MODELS, {"default": "face.pt"}),
                 "detection_threshold": ("FLOAT", {"default": 0.4, "min": 0.1, "max": 1.0, "step": 0.05}),
                 "min_face_size": ("INT", {"default": 32, "min": 8, "max": 1024, "step": 8}),
                 "padding": ("INT", {"default": 32, "min": 0, "max": 1024, "step": 8}),
