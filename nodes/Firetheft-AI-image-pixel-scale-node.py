@@ -7,7 +7,10 @@ import folder_paths
 import os
 import uuid
 import comfy.model_management
+from typing import TypedDict, Optional, List
+from comfy_api.latest import io, Types
 
+# --- Internal Helper Functions (Logic Kept Same) ---
 def image_upscale_on_pixel_space(image, scale_method, scale_factor):
     w = max(2, int(round((image.shape[2] * scale_factor) / 2.0)) * 2)
     h = max(2, int(round((image.shape[1] * scale_factor) / 2.0)) * 2)
@@ -22,14 +25,10 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
     new_w = max(2, int(round((w * scale_factor) / 2.0)) * 2)
     new_h = max(2, int(round((h * scale_factor) / 2.0)) * 2)
     
-    # Human-readable MP to raw pixels
     max_pixels = int(max_megapixels * 1024 * 1024)
-    
-    # Inner batching logic based on pixels
     out_pixels_per_frame = new_w * new_h
     batch_size_per_step = max(1, max_pixels // out_pixels_per_frame)
     
-    # Progress is now based on total steps, not just chunks
     total_steps = math.ceil(batch_size / batch_size_per_step)
     pbar = comfy.utils.ProgressBar(total_steps)
 
@@ -40,7 +39,6 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
     processed_count = 0
 
     try:
-        # Outer chunking loop (Grouping for cache/memory management)
         total_chunks = math.ceil(batch_size / chunk_frames)
         for chunk_idx in range(total_chunks):
             chunk_start = chunk_idx * chunk_frames
@@ -49,13 +47,11 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
             
             chunk_results = []
             
-            # Inner processing loop (Model batching)
             for i in range(0, curr_chunk.shape[0], batch_size_per_step):
                 batch = curr_chunk[i:i + batch_size_per_step]
                 actual_batch_len = batch.shape[0]
                 curr_w = w
                 
-                # Move to device ONLY for processing
                 batch = batch.to(comfy.model_management.get_torch_device())
                 
                 while curr_w < new_w:
@@ -66,26 +62,17 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
                         batch = model_upscaler.upscale(upscale_model, batch)[0]
 
                     if batch.shape[2] == curr_w:
-                        logging.info("[image_upscale_on_pixel_space_with_model] x1 upscale model selected or no growth")
                         break
                     curr_w = batch.shape[2]
 
-                # Final resize for this batch
                 batch = nodes.ImageScale().upscale(batch, scale_method, new_w, new_h, False)[0]
-                
-                # Collect batch result on CPU
                 chunk_results.append(batch.cpu())
                 del batch
                 
-                # Update progress per batch
                 processed_count += actual_batch_len
                 pbar.update(1)
-                logging.info(f"Upscaling: {processed_count}/{batch_size} frames processed (Current batch size: {actual_batch_len})")
-                
-                # Proactive VRAM clearing after each batch step
                 comfy.model_management.soft_empty_cache()
             
-            # Processed a full chunk, combine and cache
             processed_chunk = torch.cat(chunk_results, dim=0)
             
             if cache_backend == "disk":
@@ -97,9 +84,6 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
                 out_images.append(processed_chunk)
                 del processed_chunk
             
-            logging.info(f"Chunk Cache: Group {chunk_idx + 1}/{total_chunks} saved to {cache_backend}")
-
-        # Final reconstruction (Cat everything into one tensor)
         if cache_backend == "disk":
             final_images = []
             for f in temp_files:
@@ -109,7 +93,6 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
             image = torch.cat(out_images, dim=0)
             
     finally:
-        # Cleanup temp files
         for f in temp_files:
             if os.path.exists(f):
                 try:
@@ -119,41 +102,71 @@ def image_upscale_on_pixel_space_with_model_optimized(image, scale_method, upsca
 
     return image
 
-class ImagePixelScaleNode:
+# --- New API Node Definition ---
+
+class ScaleModeInput(TypedDict, total=False):
+    scale_mode: str
+    scale_factor: float
+    resolution: str
+
+class ImagePixelScaleNode(io.ComfyNode):
     upscale_methods = ["lanczos", "bicubic", "bilinear", "nearest-exact", "area"]
 
     @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-                     "image": ("IMAGE", ),
-                     "scale_mode": (["multiple", "resolution"], {"default": "multiple", "tooltip": "Scale mode: by multiple, or by fixed resolution long side automatically adapts."}),
-                     "scale_factor": ("FLOAT", {"default": 2, "min": 0.1, "max": 10000, "step": 0.05, "tooltip": "Target scale factor (e.g., 2 represents 2 times magnification)."}),
-                     "resolution": (["720p (1280)", "1080p (1920)", "2k (2560)", "3k (3072)", "4k (3840)", "8k (7680)"], {"default": "2k (2560)", "tooltip": "Target fixed resolution (based on the long side in pixels, maintaining the original image ratio)."}),
-                     "scale_method": (s.upscale_methods, {"default": "bicubic", "tooltip": "Scaling algorithm: for better image quality, it is recommended to use lanczos or bicubic to avoid the jaggedness of nearest-exact."}),
-                     "max_megapixels": ("FLOAT", {"default": 32, "min": 0.01, "max": 1024.0, "step": 0.01, "tooltip": "Maximum pixel budget (MP). The system automatically calculates the batch based on this value. 8G VRAM is recommended for 16-32, and the larger the value, the faster the speed but the more VRAM it occupies."}),
-                     "chunk_frames": ("INT", {"default": 128, "min": 1, "max": 65535, "step": 1, "tooltip": "Outer chunk processing frame count. Controls the frequency of progress updates and the size of disk cache units."}),
-                     "cache_backend": (["memory", "disk"], {"default": "disk", "tooltip": "Cache mode: memory (fast, uses RAM) or disk (slower, uses disk, prevents OOM)."}),
-                    },
-                "optional": {
-                        "upscale_model_opt": ("UPSCALE_MODEL", {"tooltip": "(Optional) External upscale model. If connected, it will be used for the initial upscale before precise dimension adjustment."}),
-                    }
-                }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="ImagePixelScaleNode",
+            display_name="Image Pixel Scale（图像像素空间缩放）",
+            category="📜Firetheft AI Tools",
+            inputs=[
+                io.Image.Input("image"),
+                io.DynamicCombo.Input(
+                    "scale_mode",
+                    tooltip="Scale mode: by multiple, or by fixed resolution long side automatically adapts.",
+                    options=[
+                        io.DynamicCombo.Option("multiple", [
+                            io.Float.Input("scale_factor", default=2.0, min=0.1, max=10000.0, step=0.05, tooltip="Target scale factor.")
+                        ]),
+                        io.DynamicCombo.Option("resolution", [
+                            io.Combo.Input("resolution", options=["720p (1280)", "1080p (1920)", "2k (2560)", "3k (3072)", "4k (3840)", "8k (7680)"], default="2k (2560)", tooltip="Target fixed resolution.")
+                        ])
+                    ],
+                ),
+                io.Combo.Input("scale_method", options=cls.upscale_methods, default="bicubic", tooltip="Scaling algorithm."),
+                io.Float.Input("max_megapixels", default=32.0, min=0.01, max=1024.0, step=0.01, tooltip="Maximum pixel budget (MP)."),
+                io.Int.Input("chunk_frames", default=128, min=1, max=65535, step=1, tooltip="Outer chunk frame count."),
+                io.Combo.Input("cache_backend", options=["memory", "disk"], default="disk", tooltip="Cache mode: memory or disk."),
+                io.UpscaleModel.Input("upscale_model_opt", optional=True, tooltip="(Optional) External upscale model.")
+            ],
+            outputs=[
+                io.Image.Output("images")
+            ]
+        )
 
-    RETURN_TYPES = ("IMAGE",)
-    FUNCTION = "doit"
-
-    CATEGORY = "📜Firetheft AI Tools"
-
-    def doit(self, image, scale_mode, scale_factor, resolution, scale_method, max_megapixels, chunk_frames, cache_backend, upscale_model_opt=None):
-        if scale_mode == "resolution":
+    @classmethod
+    def execute(
+        cls,
+        image: torch.Tensor,
+        scale_mode: ScaleModeInput,
+        scale_method: str,
+        max_megapixels: float,
+        chunk_frames: int,
+        cache_backend: str,
+        upscale_model_opt: Optional[torch.Tensor] = None
+    ) -> io.NodeOutput:
+        
+        mode = scale_mode["scale_mode"]
+        
+        if mode == "resolution":
             try:
-                target_longest_side = int(resolution.split("(")[1].replace(")", ""))
+                resolution_str = scale_mode.get("resolution", "2k (2560)")
+                target_longest_side = int(resolution_str.split("(")[1].replace(")", ""))
                 longest_side = max(image.shape[2], image.shape[1])
                 actual_scale_factor = target_longest_side / longest_side
             except Exception:
-                actual_scale_factor = scale_factor
+                actual_scale_factor = 1.0
         else:
-            actual_scale_factor = scale_factor
+            actual_scale_factor = scale_mode.get("scale_factor", 2.0)
 
         if upscale_model_opt is None:
             image = image_upscale_on_pixel_space(image, scale_method, actual_scale_factor)
@@ -162,8 +175,10 @@ class ImagePixelScaleNode:
                 image, scale_method, upscale_model_opt, actual_scale_factor, 
                 max_megapixels, chunk_frames, cache_backend
             )
-        return (image,)
+        
+        return io.NodeOutput(image)
 
+# Compatibility Mappings for older loaders if needed (optional since io.ComfyNode exports automatically)
 NODE_CLASS_MAPPINGS = {
     "ImagePixelScaleNode": ImagePixelScaleNode
 }

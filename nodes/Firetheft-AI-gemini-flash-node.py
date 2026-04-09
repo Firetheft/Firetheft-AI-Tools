@@ -200,7 +200,8 @@ class GeminiFlash:
                 "model_version": ([
                     "no-api", 
                     "gemini-3-flash-preview",
-                    "gemini-2.5-flash"
+                    "gemini-2.5-flash",
+                    "gemini-3.1-flash-lite-preview"
                 ], {"default": "gemini-3-flash-preview"}),
                 "operation_mode": (["analysis", "generate_images"], {"default": "analysis"}),
                 "chat_mode": ("BOOLEAN", {"default": False}),

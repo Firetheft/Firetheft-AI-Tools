@@ -5,6 +5,10 @@ import torch
 import torch.nn.functional as F
 import nodes
 from nodes import MAX_RESOLUTION
+from typing import TypedDict, Optional, List, Tuple
+from comfy_api.latest import io, Types
+
+# --- Internal Helper Functions (Logic Kept Same) ---
 
 def vae_decode(vae, samples, use_tile, hook, tile_size=512, overlap=64):
     if use_tile:
@@ -38,20 +42,6 @@ def vae_encode(vae, pixels, use_tile, hook, tile_size=512, overlap=64):
 
     return samples
 
-def latent_upscale_on_pixel_space_shape2(samples, scale_method, w, h, vae, use_tile=False, tile_size=512, save_temp_prefix=None, hook=None, overlap=64):
-    pixels = vae_decode(vae, samples, use_tile, hook, tile_size=tile_size, overlap=overlap)
-
-    if save_temp_prefix is not None:
-        nodes.PreviewImage().save_images(pixels, filename_prefix=save_temp_prefix)
-
-    pixels = nodes.ImageScale().upscale(pixels, scale_method, int(w), int(h), False)[0]
-
-    old_pixels = pixels
-    if hook is not None:
-        pixels = hook.post_upscale(pixels)
-
-    return vae_encode(vae, pixels, use_tile, hook, tile_size=tile_size, overlap=overlap), old_pixels
-
 def latent_upscale_on_pixel_space2(samples, scale_method, scale_factor, vae, use_tile=False, tile_size=512, save_temp_prefix=None, hook=None, overlap=64):
     pixels = vae_decode(vae, samples, use_tile, hook, tile_size=tile_size, overlap=overlap)
 
@@ -61,35 +51,6 @@ def latent_upscale_on_pixel_space2(samples, scale_method, scale_factor, vae, use
     w = pixels.shape[2] * scale_factor
     h = pixels.shape[1] * scale_factor
     pixels = nodes.ImageScale().upscale(pixels, scale_method, int(w), int(h), False)[0]
-
-    old_pixels = pixels
-    if hook is not None:
-        pixels = hook.post_upscale(pixels)
-
-    return vae_encode(vae, pixels, use_tile, hook, tile_size=tile_size, overlap=overlap), old_pixels
-
-def latent_upscale_on_pixel_space_with_model_shape2(samples, scale_method, upscale_model, new_w, new_h, vae, use_tile=False, tile_size=512, save_temp_prefix=None, hook=None, overlap=64):
-    pixels = vae_decode(vae, samples, use_tile, hook, tile_size=tile_size, overlap=overlap)
-
-    if save_temp_prefix is not None:
-        nodes.PreviewImage().save_images(pixels, filename_prefix=save_temp_prefix)
-
-    w = pixels.shape[2]
-
-    current_w = w
-    while current_w < new_w:
-        model_upscaler = nodes.NODE_CLASS_MAPPINGS['ImageUpscaleWithModel']()
-        if hasattr(model_upscaler, 'execute'):
-            pixels = model_upscaler.execute(upscale_model, pixels)[0]
-        else:
-            pixels = model_upscaler.upscale(upscale_model, pixels)[0]
-
-        current_w = pixels.shape[2]
-        if current_w == w:
-            logging.info("[latent_upscale_on_pixel_space_with_model] x1 upscale model selected")
-            break
-
-    pixels = nodes.ImageScale().upscale(pixels, scale_method, int(new_w), int(new_h), False)[0]
 
     old_pixels = pixels
     if hook is not None:
@@ -131,35 +92,93 @@ def latent_upscale_on_pixel_space_with_model2(samples, scale_method, upscale_mod
 
     return vae_encode(vae, pixels, use_tile, hook, tile_size=tile_size, overlap=overlap), old_pixels
 
-class LatentPixelScaleNode:
+# --- New API Node Definition ---
+
+class ScaleModeInput(TypedDict, total=False):
+    scale_mode: str
+    scale_factor: float
+    resolution: str
+
+class LatentPixelScaleNode(io.ComfyNode):
     upscale_methods = ["lanczos", "bicubic", "bilinear", "nearest-exact", "area"]
 
     @classmethod
-    def INPUT_TYPES(s):
-        return {"required": {
-                     "samples": ("LATENT", ),
-                     "scale_method": (s.upscale_methods, {"default": "bicubic", "tooltip": "缩放算法：注重画质建议使用 lanczos 或 bicubic，避免 nearest-exact 的锯齿感。"}),
-                     "scale_factor": ("FLOAT", {"default": 2, "min": 0.1, "max": 10000, "step": 0.05, "tooltip": "目标缩放倍数（例如 2 代表放大 2 倍）。"}),
-                     "vae": ("VAE", ),
-                     "use_tiled_vae": ("BOOLEAN", {"default": False, "label_on": "enabled", "label_off": "disabled", "tooltip": "使用分块 VAE 编码/解码，以处理大尺寸图像。"}),
-                    },
-                "optional": {
-                        "upscale_model_opt": ("UPSCALE_MODEL", {"tooltip": "（可选）外接放大模型。如果连接，将先使用模型放大，再精确调整到目标尺寸。"}),
-                    }
-                }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LatentPixelScaleNode",
+            display_name="Latent Pixel Scale（像素空间缩放）",
+            category="📜Firetheft AI Tools",
+            inputs=[
+                io.Latent.Input("samples"),
+                io.DynamicCombo.Input(
+                    "scale_mode",
+                    tooltip="Scale mode: by multiple, or by fixed resolution long side automatically adapts.",
+                    options=[
+                        io.DynamicCombo.Option("multiple", [
+                            io.Float.Input("scale_factor", default=2.0, min=0.1, max=10000.0, step=0.05, tooltip="Target scale factor.")
+                        ]),
+                        io.DynamicCombo.Option("resolution", [
+                            io.Combo.Input("resolution", options=["720p (1280)", "1080p (1920)", "2k (2560)", "3k (3072)", "4k (3840)", "8k (7680)"], default="2k (2560)", tooltip="Target fixed resolution.")
+                        ])
+                    ],
+                ),
+                io.Combo.Input("scale_method", options=cls.upscale_methods, default="bicubic", tooltip="Scaling algorithm."),
+                io.Vae.Input("vae"),
+                io.Boolean.Input("use_tiled_vae", default=False, label_on="enabled", label_off="disabled", tooltip="Use Tiled VAE for large images."),
+                io.UpscaleModel.Input("upscale_model_opt", optional=True, tooltip="(Optional) External upscale model.")
+            ],
+            outputs=[
+                io.Latent.Output("latent"),
+                io.Image.Output("image")
+            ]
+        )
 
-    RETURN_TYPES = ("LATENT", "IMAGE")
-    FUNCTION = "doit"
-
-    CATEGORY = "📜Firetheft AI Tools"
-
-    def doit(self, samples, scale_method, scale_factor, vae, use_tiled_vae, upscale_model_opt=None):
-        if upscale_model_opt is None:
-            latimg = latent_upscale_on_pixel_space2(samples, scale_method, scale_factor, vae, use_tile=use_tiled_vae)
+    @classmethod
+    def execute(
+        cls,
+        samples: dict,
+        scale_mode: ScaleModeInput,
+        scale_method: str,
+        vae: torch.Tensor,
+        use_tiled_vae: bool,
+        upscale_model_opt: Optional[torch.Tensor] = None
+    ) -> io.NodeOutput:
+        
+        mode = scale_mode["scale_mode"]
+        
+        # Calculate actual scale factor
+        if mode == "resolution":
+            try:
+                resolution_str = scale_mode.get("resolution", "2k (2560)")
+                target_longest_side = int(resolution_str.split("(")[1].replace(")", ""))
+                
+                # Latent samples are usually 1/8 of pixel size
+                # Shape is [B, C, H, W] where H,W are latent dimensions
+                latent_h = samples['samples'].shape[2]
+                latent_w = samples['samples'].shape[3]
+                pixel_h = latent_h * 8
+                pixel_w = latent_w * 8
+                
+                longest_side = max(pixel_h, pixel_w)
+                actual_scale_factor = target_longest_side / longest_side
+            except Exception:
+                actual_scale_factor = 1.0
         else:
-            latimg = latent_upscale_on_pixel_space_with_model2(samples, scale_method, upscale_model_opt, scale_factor, vae, use_tile=use_tiled_vae)
-        return latimg
+            actual_scale_factor = scale_mode.get("scale_factor", 2.0)
 
+        # Process
+        if upscale_model_opt is None:
+            latent, image = latent_upscale_on_pixel_space2(
+                samples, scale_method, actual_scale_factor, vae, use_tile=use_tiled_vae
+            )
+        else:
+            latent, image = latent_upscale_on_pixel_space_with_model2(
+                samples, scale_method, upscale_model_opt, actual_scale_factor, vae, use_tile=use_tiled_vae
+            )
+            
+        return io.NodeOutput(latent, image)
+
+# Compatibility Mappings
 NODE_CLASS_MAPPINGS = {
     "LatentPixelScaleNode": LatentPixelScaleNode
 }
