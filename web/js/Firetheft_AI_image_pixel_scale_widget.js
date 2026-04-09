@@ -10,7 +10,7 @@ app.registerExtension({
 
                 const node = this;
 
-                // Allow widgets to initialize
+                // Allow widgets to initialize properly
                 setTimeout(() => {
                     const scaleModeWidget = node.widgets.find(w => w.name === "scale_mode");
                     const scaleFactorWidget = node.widgets.find(w => w.name === "scale_factor");
@@ -18,33 +18,40 @@ app.registerExtension({
 
                     if (!scaleModeWidget || !scaleFactorWidget || !resolutionWidget) return;
 
-                    // Save original properties
+                    // Save original properties more robustly
                     scaleFactorWidget.origType = scaleFactorWidget.type;
                     scaleFactorWidget.origComputeSize = scaleFactorWidget.computeSize;
 
-                    resolutionWidget.origType = resolutionWidget.type;
+                    // Ensure we capture "combo" if it's a list
+                    const isCombo = Array.isArray(nodeData.input?.required?.resolution?.[0]);
+                    resolutionWidget.origType = isCombo ? "combo" : resolutionWidget.type;
                     resolutionWidget.origComputeSize = resolutionWidget.computeSize;
 
                     node.updateVisibility = () => {
                         const mode = scaleModeWidget.value;
-                        if (mode === "multiple" || mode === "By Scale Factor") {
+                        // Match Python defined strings: "multiple" and "resolution"
+                        if (mode === "multiple") {
                             scaleFactorWidget.type = scaleFactorWidget.origType;
                             scaleFactorWidget.computeSize = scaleFactorWidget.origComputeSize;
                             resolutionWidget.type = "hidden";
                             resolutionWidget.computeSize = () => [0, -4];
-                        } else {
+                        } else if (mode === "resolution") {
                             resolutionWidget.type = resolutionWidget.origType;
                             resolutionWidget.computeSize = resolutionWidget.origComputeSize;
                             scaleFactorWidget.type = "hidden";
                             scaleFactorWidget.computeSize = () => [0, -4];
                         }
 
+                        // Trigger resize and refresh
                         setTimeout(() => {
-                            if (node.computeSize) {
-                                node.setSize(node.computeSize());
+                            if (node.setSize) {
+                                const size = node.computeSize();
+                                if (size) {
+                                    node.setSize([Math.max(node.size[0], size[0]), size[1]]);
+                                }
                                 app.graph.setDirtyCanvas(true, true);
                             }
-                        }, 10);
+                        }, 20);
                     };
 
                     node.updateVisibility();
@@ -56,7 +63,7 @@ app.registerExtension({
                             return origCallback.apply(this, arguments);
                         }
                     };
-                }, 10);
+                }, 50);
             };
 
             const onConfigure = nodeType.prototype.onConfigure;
@@ -67,7 +74,7 @@ app.registerExtension({
                 } else {
                     setTimeout(() => {
                         if (this.updateVisibility) this.updateVisibility();
-                    }, 50);
+                    }, 100);
                 }
             };
         }
