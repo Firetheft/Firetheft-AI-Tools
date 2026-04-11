@@ -16,6 +16,7 @@ node_list = [
     "Firetheft-AI-audio-enhancer-node",
     "Firetheft-AI-image-pixel-scale-node",
     "Firetheft-AI-latent-pixel-scale-node",
+    "Firetheft-AI-rtx-scale-node",
 ]
 
 NODE_CLASS_MAPPINGS = {}

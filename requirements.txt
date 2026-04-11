@@ -10,3 +10,4 @@ demucs
 librosa
 pedalboard
 llama-cpp-python @ https://modelscope.cn/models/disambo/Tools/resolve/master/whl/llama_cpp_python-0.3.33%2Bcu130.basic-cp311-cp311-win_amd64.whl
+nvidia-vfx
