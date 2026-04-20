@@ -47,6 +47,7 @@ class AudioQuality_Enhancer:
         return {
             "required": {
                 "audio": ("AUDIO",),
+                "enabled": ("BOOLEAN", {"default": True, "label": "Enabled"}),
                 "enhancement_level": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, 
                                    "display": "slider", "label": "Enhancement Level"})
             },
@@ -129,7 +130,7 @@ class AudioQuality_Enhancer:
             print(f"Error loading Demucs model: {e}")
             return None
     
-    def enhance_audio(self, audio: Dict, enhancement_level: float = 0.5,
+    def enhance_audio(self, audio: Dict, enabled: bool = True, enhancement_level: float = 0.5,
                      use_source_separation: bool = True, demucs_model: str = "htdemucs",
                      device: str = "cuda",
                      vocals_enhance: float = 0.5, drums_enhance: float = 0.6,
@@ -165,6 +166,11 @@ class AudioQuality_Enhancer:
         if audio is None:
             print("No audio data to process")
             return (None,)
+            
+        # Check if enabled
+        if not enabled:
+            # print("AudioQuality_Enhancer disabled, passing through original audio")
+            return (audio,)
             
         # Extract audio data and sample rate
         waveform = audio["waveform"]
