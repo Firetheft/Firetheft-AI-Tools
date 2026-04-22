@@ -103,6 +103,13 @@ class TextEncodeFlux2KleinImageEdit_Enhanced:
         ref_masks = []
         
         temp = [image1, image2, image3, image4, image5]
+        # Filter out 1x1 placeholder images
+        for i in range(len(temp)):
+            img = temp[i]
+            if img is not None and isinstance(img, torch.Tensor):
+                if img.shape[1] <= 1 and img.shape[2] <= 1:
+                    temp[i] = None
+
         masks_temp = [mask1, mask2, mask3, mask4, mask5] 
 
         if not enable_mask:
@@ -383,6 +390,13 @@ class TextEncodeQwenImageEdit_Enhanced:
         ref_masks = []
         
         temp = [image1, image2, image3, image4, image5]
+        # Filter out 1x1 placeholder images
+        for i in range(len(temp)):
+            img = temp[i]
+            if img is not None and isinstance(img, torch.Tensor):
+                if img.shape[1] <= 1 and img.shape[2] <= 1:
+                    temp[i] = None
+
         masks_temp = [mask1, mask2, mask3, mask4, mask5] 
         
         images = []
@@ -627,6 +641,10 @@ class CropWithPadInfo_Enhanced:
         width_padding = pad_info.get("width", 0)
         height_padding = pad_info.get("height", 0)
         scale_by = pad_info.get("scale_by", 1.0)
+
+        # Safety: If input is a 1x1 placeholder, just return it without processing
+        if image.shape[1] <= 1 and image.shape[2] <= 1:
+            return (image,)
 
         scaled_width_padding = round(width_padding * latent_upscale_factor)
         scaled_height_padding = round(height_padding * latent_upscale_factor)
