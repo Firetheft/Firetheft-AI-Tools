@@ -17,8 +17,9 @@ node_list = [
     "Firetheft-AI-image-pixel-scale-node",
     "Firetheft-AI-latent-pixel-scale-node",
     "Firetheft-AI-rtx-scale-node",
-    "Firetheft-AI-ltx-sequencer",
-    "Firetheft-AI-image-batch-multi",
+    "Firetheft-AI-ltx-sequencer-node",
+    "Firetheft-AI-image-batch-multi-node",
+    "Firetheft-AI-audio-clipper-ltx-node",
 ]
 
 NODE_CLASS_MAPPINGS = {}

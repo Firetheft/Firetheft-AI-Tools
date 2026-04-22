@@ -12,8 +12,8 @@ class FiretheftImageBatchMulti(io.ComfyNode):
             
         return io.Schema(
             node_id="FiretheftImageBatchMulti",
-            display_name="Firetheft Image Batch Multi",
-            category="📜Firetheft AI Tools/Image",
+            display_name="Batch Multi Image（多图批处理）",
+            category="📜Firetheft AI Tools",
             description="Smartly batch multiple images. Only connected inputs are included. Filters out 1x1 placeholders.",
             inputs=inputs,
             outputs=[
@@ -66,4 +66,4 @@ class FiretheftImageBatchMulti(io.ComfyNode):
         return io.NodeOutput(out_batch)
 
 NODE_CLASS_MAPPINGS = {"FiretheftImageBatchMulti": FiretheftImageBatchMulti}
-NODE_DISPLAY_NAME_MAPPINGS = {"FiretheftImageBatchMulti": "Firetheft Image Batch Multi"}
+NODE_DISPLAY_NAME_MAPPINGS = {"FiretheftImageBatchMulti": "Batch Multi Image（多图批处理）"}

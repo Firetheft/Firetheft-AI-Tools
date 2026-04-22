@@ -40,8 +40,8 @@ class FiretheftLTXSequencer(io.ComfyNode):
 
         return io.Schema(
             node_id="FiretheftLTXSequencer",
-            display_name="Firetheft LTX Sequencer",
-            category="📜Firetheft AI Tools/LTX",
+            display_name="LTX Sequencer（时间轴插入）",
+            category="📜Firetheft AI Tools",
             inputs=inputs,
             outputs=[
                 io.Conditioning.Output(display_name="positive"),
@@ -113,4 +113,4 @@ class FiretheftLTXSequencer(io.ComfyNode):
         return io.NodeOutput(positive, negative, {"samples": latent_image, "noise_mask": noise_mask})
 
 NODE_CLASS_MAPPINGS = {"FiretheftLTXSequencer": FiretheftLTXSequencer}
-NODE_DISPLAY_NAME_MAPPINGS = {"FiretheftLTXSequencer": "Firetheft LTX Sequencer"}
+NODE_DISPLAY_NAME_MAPPINGS = {"FiretheftLTXSequencer": "LTX Sequencer（时间轴插入）"}
