@@ -54,7 +54,8 @@ class FiretheftImageBatchMulti(io.ComfyNode):
             # Auto-resize if dimensions don't match using lanczos
             if curr_h != ref_h or curr_w != ref_w:
                 tmp = img.permute(0, 3, 1, 2)
-                tmp = comfy.utils.common_upscale(tmp, ref_w, ref_h, "lanczos", "disabled")
+                # Using 'center' instead of 'disabled' to maintain aspect ratio and crop instead of stretching
+                tmp = comfy.utils.common_upscale(tmp, ref_w, ref_h, "lanczos", "center")
                 img = tmp.permute(0, 2, 3, 1) # back to [B, H, W, C]
             
             processed_images.append(img)
