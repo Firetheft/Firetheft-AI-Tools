@@ -97,17 +97,19 @@ class FiretheftLTXSequencer(io.ComfyNode):
 
             image_1, t = LTXVAddGuide.encode(vae, latent_width, latent_height, img, scale_factors)
             
-            # Correct mapping: get_latent_index returns (latent_index, pixel_index)
-            # We must use pixel_index (the second value) for append_keyframe.
-            latent_idx, pixel_idx = LTXVAddGuide.get_latent_index(positive, latent_length, t.shape[2], f_idx, scale_factors)
+            # Correct mapping from original plugin: (frame_idx, latent_idx)
+            # The first value is the one used for append_keyframe.
+            frame_idx, latent_idx = LTXVAddGuide.get_latent_index(positive, latent_length, t.shape[2], f_idx, scale_factors)
             
-            # Critical Boundary Safety: if the keyframe exceeds latent length, cap it
+            # Original assertion: assert latent_idx + t.shape[2] <= latent_length
+            # We use a safe clamp instead of crashing
             if latent_idx + t.shape[2] > latent_length:
-                 # Adjust pixel_idx to the maximum possible valid position
-                 pixel_idx = (latent_length - t.shape[2]) * scale_factors[0] 
-            
+                 # Re-calculate indices for the very last possible frame
+                 target_f = (latent_length - t.shape[2]) * scale_factors[0]
+                 frame_idx, latent_idx = LTXVAddGuide.get_latent_index(positive, latent_length, t.shape[2], target_f, scale_factors)
+
             positive, negative, latent_image, noise_mask = LTXVAddGuide.append_keyframe(
-                positive, negative, pixel_idx, latent_image, noise_mask, t, strength, scale_factors,
+                positive, negative, frame_idx, latent_image, noise_mask, t, strength, scale_factors,
             )
 
         return io.NodeOutput(positive, negative, {"samples": latent_image, "noise_mask": noise_mask})
