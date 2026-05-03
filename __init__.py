@@ -20,6 +20,7 @@ node_list = [
     "Firetheft-AI-ltx-sequencer-node",
     "Firetheft-AI-image-batch-multi-node",
     "Firetheft-AI-audio-clipper-ltx-node",
+    "Firetheft-AI-image-save-pass-node",
 ]
 
 NODE_CLASS_MAPPINGS = {}
